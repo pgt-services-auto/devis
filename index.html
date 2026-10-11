@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Jamais référencée : on n'y arrive que par le lien personnel reçu par SMS. -->
+<meta name="robots" content="noindex, nofollow">
+<title>Demande de devis</title>
+<style>
+  :root { --candy: #E02A38; --candy-top: #F24B57; --candy-bottom: #CC0A1E; --night: #2C3035; --text: #1E2328; --soft: #F4F1F2; --line: #E3DEE0; --green: #2FA84F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--soft); color: var(--text); }
+  header { background: linear-gradient(180deg, var(--candy-top), var(--candy-bottom)); color: #fff; padding: 22px 18px 26px; }
+  header h1 { margin: 0; font-size: 24px; font-weight: 800; }
+  header p { margin: 6px 0 0; opacity: .9; font-size: 15px; }
+  main { max-width: 560px; margin: -14px auto 40px; padding: 0 14px; }
+  .card { background: #fff; border-radius: 20px; padding: 18px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 14px; }
+  label.field { display: block; font-weight: 700; font-size: 14px; margin: 14px 0 6px; }
+  input[type=text], input[type=tel], input[type=email], textarea { width: 100%; font-size: 17px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; color: var(--text); }
+  input:focus, textarea:focus { outline: 2px solid var(--candy); border-color: transparent; }
+  #plate { text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .works label { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; font-size: 16px; }
+  .works input { width: 20px; height: 20px; accent-color: var(--candy); }
+  .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin-top: 14px; }
+  .consent input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--candy); }
+  button { width: 100%; border: 0; border-radius: 999px; background: var(--green); color: #fff; font-size: 18px; font-weight: 800; padding: 15px; margin-top: 18px; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  .error { color: #C0182A; font-weight: 700; margin-top: 10px; display: none; }
+  .hint { color: #6B7280; font-size: 13px; margin-top: 4px; }
+  .trap { position: absolute; left: -9999px; }
+  .done { text-align: center; padding: 30px 18px; }
+  .done h2 { margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="garage">Demande de devis</h1>
+  <p>2 minutes : on vous rappelle avec votre devis.</p>
+</header>
+<main>
+  <div id="state" class="card done" style="display:none"></div>
+  <form id="form" class="card" style="display:none" novalidate>
+    <label class="field" for="plate">Immatriculation du véhicule</label>
+    <input id="plate" type="text" autocomplete="off" placeholder="AB-123-CD" maxlength="20" required>
+
+    <label class="field">Travaux souhaités</label>
+    <div id="works" class="works"></div>
+    <label class="field" for="other">Autre / je ne sais pas : décrivez le problème</label>
+    <textarea id="other" rows="3" maxlength="1000" placeholder="Ex. : bruit à l'avant droit en freinant"></textarea>
+
+    <label class="field" for="first">Prénom</label>
+    <input id="first" type="text" autocomplete="given-name" maxlength="60" required>
+    <label class="field" for="mobile">Mobile</label>
+    <input id="mobile" type="tel" autocomplete="tel" placeholder="06 12 34 56 78" maxlength="30">
+    <label class="field" for="email">E-mail (facultatif si mobile)</label>
+    <input id="email" type="email" autocomplete="email" maxlength="120">
+    <div class="hint">Pour vous envoyer le devis, uniquement.</div>
+    <!-- Piège à robots : un humain ne voit pas cette case. -->
+    <input class="trap" id="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+    <div class="consent">
+      <input id="consent" type="checkbox">
+      <label for="consent">J'accepte que le garage utilise ces informations pour établir mon devis et me recontacter à ce sujet.</label>
+    </div>
+    <div id="error" class="error"></div>
+    <button id="send" type="submit">Envoyer ma demande</button>
+  </form>
+</main>
+<script>
+  // Adresse publique de la base (la clé « publishable » est publique par nature ; les données
+  // sont protégées par les règles de la base : cette page ne peut que déposer une demande).
+  const API = 'https://zakgsubdzkogtjiovurh.supabase.co/rest/v1/rpc/';
+  const KEY = 'sb_publishable_P82oyltIz2weBadrFxs5NQ_J0MglVz1';
+  const token = new URLSearchParams(location.search).get('c') || '';
+  const $ = (id) => document.getElementById(id);
+
+  async function rpc(name, body) {
+    const r = await fetch(API + name, {
+      method: 'POST',
+      headers: { 'apikey': KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  function show(title, text) {
+    $('form').style.display = 'none';
+    const s = $('state');
+    s.style.display = 'block';
+    s.innerHTML = '';
+    const h = document.createElement('h2'); h.textContent = title;
+    const p = document.createElement('p'); p.textContent = text;
+    s.append(h, p);
+  }
+
+  const messages = {
+    invalid: ['Lien invalide', "Ce lien n'est pas valable. Demandez un nouveau lien au garage."],
+    used: ['Demande déjà envoyée', 'Merci ! Votre demande a bien été reçue. Le garage vous recontacte.'],
+    expired: ['Lien expiré', 'Ce lien a expiré. Demandez un nouveau lien au garage.'],
+  };
+
+  async function start() {
+    if (!/^[0-9a-f-]{20,}$/i.test(token)) return show(...messages.invalid);
+    try {
+      const info = await rpc('quote_link_info', { p_token: token });
+      if (info.status !== 'open') return show(...(messages[info.status] || messages.invalid));
+      if (info.garage) $('garage').textContent = 'Demande de devis — ' + info.garage;
+      const box = $('works');
+      for (const name of info.services || []) {
+        const l = document.createElement('label');
+        const c = document.createElement('input');
+        c.type = 'checkbox'; c.value = name;
+        l.append(c, document.createTextNode(name));
+        box.append(l);
+      }
+      $('form').style.display = 'block';
+    } catch (e) {
+      show('Service indisponible', 'Réessayez dans quelques instants.');
+    }
+  }
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('error');
+    const fail = (m) => { err.textContent = m; err.style.display = 'block'; };
+    err.style.display = 'none';
+    if ($('website').value) return show(...messages.used); // robot : on ne dépose rien
+    const plate = $('plate').value.trim();
+    const first = $('first').value.trim();
+    const mobile = $('mobile').value.trim();
+    const email = $('email').value.trim();
+    const services = [...document.querySelectorAll('#works input:checked')].map((c) => c.value);
+    const other = $('other').value.trim();
+    if (plate.length < 2) return fail("Indiquez l'immatriculation du véhicule.");
+    if (!services.length && !other) return fail('Cochez un travail ou décrivez le problème.');
+    if (!first) return fail('Indiquez votre prénom.');
+    if (!mobile && !email) return fail('Indiquez un mobile ou un e-mail pour recevoir le devis.');
+    if (!$('consent').checked) return fail('Cochez la case pour que le garage puisse vous recontacter.');
+    $('send').disabled = true;
+    try {
+      const r = await rpc('submit_quote_request', {
+        p_token: token, p_plate: plate, p_first_name: first, p_mobile: mobile, p_email: email,
+        p_services: services, p_other: other, p_consent: true,
+      });
+      if (r === 'ok') return show('Merci, ' + first + ' !', 'Votre demande est bien envoyée. Le garage prépare votre devis et vous recontacte.');
+      return show(...(messages[r] || messages.invalid));
+    } catch (e) {
+      $('send').disabled = false;
+      fail("L'envoi n'a pas abouti. Réessayez dans un instant.");
+    }
+  });
+
+  start();
+</script>
+</body>
+</html>
